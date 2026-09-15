@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -34,14 +38,31 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # GitHub-hosted Ubuntu runners already contain the Android SDK and sdkmanager.
-      # We deliberately do NOT use android-actions/setup-android@v3 because it
-      # requests the retired SDK package named "tools", which now fails.
       - name: Install Android SDK packages
+        shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-          sdkmanager --list_installed
+          set -e
+
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $ANDROID_SDK_ROOT"
+            find "$ANDROID_SDK_ROOT" -maxdepth 4 -type f -name sdkmanager -print || true
+            exit 1
+          fi
+
+          echo "Using sdkmanager: $SDKMANAGER"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          "$SDKMANAGER"             "platform-tools"             "platforms;android-35"             "build-tools;35.0.0"
+
+          "$SDKMANAGER" --list_installed
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
