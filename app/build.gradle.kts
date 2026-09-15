@@ -6,7 +6,7 @@ plugins {
 
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-val apiBaseUrl = providers.gradleProperty("VPN_API_BASE_URL").orElse("").get()
+val apiBaseUrl = providers.gradleProperty("VPN_API_BASE_URL").orElse("https://www.emdadkhodroteh.com/test").get()
 val appApiKey = providers.gradleProperty("VPN_APP_API_KEY").orElse("").get()
 
 android {
@@ -17,8 +17,8 @@ android {
         applicationId = "ir.omid.vpnman"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         buildConfigField("String", "VPN_API_BASE_URL", apiBaseUrl.asBuildConfigString())
         buildConfigField("String", "VPN_APP_API_KEY", appApiKey.asBuildConfigString())

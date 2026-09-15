@@ -1,6 +1,8 @@
 # وی پی ان من — Android
 
-نسخه 1.0.0 اپ اندرویدی «وی پی ان من» — طراحی و توسعه: امید
+> Build GitHub Actions فقط به Secret با نام `VPN_APP_API_KEY` نیاز دارد. Base URL این نسخه روی `https://www.emdadkhodroteh.com/test` تنظیم شده است.
+
+نسخه 1.0.1 اپ اندرویدی «وی پی ان من» — طراحی و توسعه: امید
 
 ## امکانات این نسخه
 
@@ -69,12 +71,12 @@ https://www.emdadkhodroteh.com/test
 
 پس از موفق شدن Build:
 
-`Actions → آخرین Run → Artifacts → VPN-Man-Android-v1.0.0`
+`Actions → آخرین Run → Artifacts → VPN-Man-Android-v1.0.1`
 
 Artifact شامل این‌هاست:
 
 ```text
-VPN-Man-v1.0.0-debug.apk
+VPN-Man-v1.0.1-debug.apk
 SHA256.txt
 ```
 
