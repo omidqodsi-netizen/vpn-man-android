@@ -17,8 +17,13 @@ android {
         applicationId = "ir.omid.vpnman"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
+
+        // Most current Android phones are arm64. The AAR is also slimmed in prepare-deps.sh.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
 
         buildConfigField("String", "VPN_API_BASE_URL", apiBaseUrl.asBuildConfigString())
         buildConfigField("String", "VPN_APP_API_KEY", appApiKey.asBuildConfigString())
@@ -58,7 +63,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

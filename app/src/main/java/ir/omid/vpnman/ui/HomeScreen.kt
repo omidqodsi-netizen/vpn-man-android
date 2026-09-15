@@ -3,6 +3,7 @@ package ir.omid.vpnman.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,21 +31,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -70,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -100,17 +93,21 @@ fun HomeScreen(
     val compact = LocalConfiguration.current.screenHeightDp < 700
     val selected = ui.selectedServer
     val errorText = vpnError ?: ui.error
-    val updateRequired = remember(ui.minimumVersion) { isNewerVersion(ui.minimumVersion, BuildConfig.VERSION_NAME) }
+    val updateRequired = remember(ui.minimumVersion) {
+        isNewerVersion(ui.minimumVersion, BuildConfig.VERSION_NAME)
+    }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF080B14), Color(0xFF0D1423), Color(0xFF080B14))
+                    listOf(Color(0xFF050812), Color(0xFF0A1020), Color(0xFF070A12))
                 )
             )
     ) {
+        AnimatedBackdrop(connection)
+
         Scaffold(containerColor = Color.Transparent) { padding ->
             Column(
                 Modifier
@@ -124,18 +121,18 @@ fun HomeScreen(
                     onRefresh = { viewModel.refresh(true) },
                     onAbout = { showAbout = true }
                 )
-                Spacer(Modifier.height(30.dp))
+                Spacer(Modifier.height(if (compact) 18.dp else 26.dp))
 
                 if (ui.loading) {
                     Spacer(Modifier.weight(1f))
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(14.dp))
                     Text("در حال دریافت سرورها…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.weight(1f))
                 } else if (updateRequired) {
                     Spacer(Modifier.weight(1f))
-                    Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(52.dp))
-                    Spacer(Modifier.height(12.dp))
+                    Text("↑", fontSize = 48.sp, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(10.dp))
                     Text("نسخه جدید اپ لازم است", style = MaterialTheme.typography.titleLarge)
                     Text("حداقل نسخه مورد نیاز: ${ui.minimumVersion}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(14.dp))
@@ -143,14 +140,14 @@ fun HomeScreen(
                     Spacer(Modifier.weight(1f))
                 } else if (ui.maintenance) {
                     Spacer(Modifier.weight(1f))
-                    Icon(Icons.Default.CloudOff, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(52.dp))
-                    Spacer(Modifier.height(12.dp))
+                    Text("☁", fontSize = 48.sp, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(10.dp))
                     Text("سرویس موقتاً در حال بروزرسانی است", style = MaterialTheme.typography.titleLarge)
                     Text("چند دقیقه دیگر دوباره امتحان کنید", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.weight(1f))
                 } else {
                     ConnectionStatus(connection)
-                    Spacer(Modifier.height(if (compact) 12.dp else 22.dp))
+                    Spacer(Modifier.height(if (compact) 12.dp else 20.dp))
                     PowerButton(
                         state = connection,
                         enabled = selected != null,
@@ -163,24 +160,28 @@ fun HomeScreen(
                                 if (ad != null && ad.showBeforeConnect) {
                                     adServer = selected
                                     pendingAd = ad
-                                } else onConnect(selected)
+                                } else {
+                                    onConnect(selected)
+                                }
                             }
                         }
                     )
-                    Spacer(Modifier.height(if (compact) 10.dp else 20.dp))
+                    Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
                     Text(
                         when (connection) {
-                            ConnectionState.CONNECTED -> "برای قطع اتصال لمس کنید"
-                            ConnectionState.CONNECTING -> "در حال برقراری تونل امن…"
+                            ConnectionState.CONNECTED -> "اتصال امن برقرار است"
+                            ConnectionState.CONNECTING -> "در حال ساخت اتصال امن…"
                             ConnectionState.DISCONNECTING -> "در حال قطع اتصال…"
-                            ConnectionState.ERROR -> "اتصال ناموفق بود"
-                            else -> "برای اتصال لمس کنید"
+                            ConnectionState.ERROR -> "اتصال برقرار نشد"
+                            else -> "برای اتصال، دکمه را لمس کنید"
                         },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (connection == ConnectionState.ERROR) Color(0xFFFFB2BA)
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge
                     )
-                    Spacer(Modifier.height(if (compact) 16.dp else 30.dp))
+                    Spacer(Modifier.height(if (compact) 14.dp else 24.dp))
                     ServerCard(selected, ui.latencies[selected?.id], onClick = { showServers = true })
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
                     if (errorText != null) ErrorCard(errorText)
                     Spacer(Modifier.weight(1f))
                     Footer()
@@ -194,7 +195,7 @@ fun HomeScreen(
         ModalBottomSheet(
             onDismissRequest = { showServers = false },
             sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = Color(0xFF0D1422)
         ) {
             ServerList(ui.servers, ui.selectedServerId, ui.latencies) { server ->
                 viewModel.select(server)
@@ -204,24 +205,28 @@ fun HomeScreen(
     }
 
     pendingAd?.let { ad ->
-        PreConnectAdDialog(ad = ad, onFinished = {
-            pendingAd = null
-            adServer?.let(onConnect)
-            adServer = null
-        }, onCancel = {
-            pendingAd = null
-            adServer = null
-        })
+        PreConnectAdDialog(
+            ad = ad,
+            onFinished = {
+                pendingAd = null
+                adServer?.let(onConnect)
+                adServer = null
+            },
+            onCancel = {
+                pendingAd = null
+                adServer = null
+            }
+        )
     }
 
     if (showAbout) {
         Dialog(onDismissRequest = { showAbout = false }) {
-            Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surface) {
+            Surface(shape = RoundedCornerShape(26.dp), color = Color(0xFF111A2B)) {
                 Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(42.dp))
-                    Spacer(Modifier.height(12.dp))
+                    Text("◈", fontSize = 38.sp, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(8.dp))
                     Text("وی پی ان من", style = MaterialTheme.typography.headlineSmall)
-                    Text("نسخه ۱.۰.۰", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("نسخه ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(16.dp))
                     Text("طراحی و توسعه: امید", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(18.dp))
@@ -233,6 +238,61 @@ fun HomeScreen(
 }
 
 @Composable
+private fun AnimatedBackdrop(state: ConnectionState) {
+    val transition = rememberInfiniteTransition(label = "background")
+    val drift by transition.animateFloat(
+        initialValue = -22f,
+        targetValue = 22f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(5200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "drift"
+    )
+    val breathe by transition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.10f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathe"
+    )
+
+    val accent = when (state) {
+        ConnectionState.CONNECTED -> Color(0xFF43E8B6)
+        ConnectionState.CONNECTING -> Color(0xFF70A7FF)
+        ConnectionState.ERROR -> Color(0xFFFF6375)
+        else -> Color(0xFF586BFF)
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .align(Alignment.TopStart)
+                .offset(x = (-95f + drift).dp, y = 95.dp)
+                .size(285.dp)
+                .scale(breathe)
+                .background(
+                    Brush.radialGradient(listOf(accent.copy(alpha = 0.20f), Color.Transparent)),
+                    CircleShape
+                )
+        )
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = (90f - drift).dp, y = 80.dp)
+                .size(340.dp)
+                .scale(1.05f + (breathe - 1f) * 0.6f)
+                .background(
+                    Brush.radialGradient(listOf(Color(0xFF7DE3C3).copy(alpha = 0.10f), Color.Transparent)),
+                    CircleShape
+                )
+        )
+    }
+}
+
+@Composable
 private fun Header(loading: Boolean, onRefresh: () -> Unit, onAbout: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -240,34 +300,53 @@ private fun Header(loading: Boolean, onRefresh: () -> Unit, onAbout: () -> Unit)
             Text("ساده، سریع و امن", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onRefresh, enabled = !loading) {
-            if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Default.Refresh, "بروزرسانی")
+            if (loading) {
+                CircularProgressIndicator(Modifier.size(21.dp), strokeWidth = 2.dp)
+            } else {
+                Text("↻", fontSize = 25.sp, color = Color.White)
+            }
         }
-        IconButton(onClick = onAbout) { Icon(Icons.Default.Info, "درباره") }
+        IconButton(onClick = onAbout) {
+            Text("ⓘ", fontSize = 22.sp, color = Color.White)
+        }
     }
 }
 
 @Composable
 private fun ConnectionStatus(state: ConnectionState) {
-    val active = state == ConnectionState.CONNECTED
+    val statusColor = when (state) {
+        ConnectionState.CONNECTED -> Color(0xFF62E6BD)
+        ConnectionState.CONNECTING, ConnectionState.DISCONNECTING -> Color(0xFF8EB6FF)
+        ConnectionState.ERROR -> Color(0xFFFF8793)
+        else -> Color(0xFF8B96AA)
+    }
+    val statusBackground = when (state) {
+        ConnectionState.CONNECTED -> Color(0x2229D6A3)
+        ConnectionState.CONNECTING, ConnectionState.DISCONNECTING -> Color(0x222F80ED)
+        ConnectionState.ERROR -> Color(0x33C93D50)
+        else -> Color(0x16FFFFFF)
+    }
+
     Row(
         Modifier
-            .background(if (active) Color(0x1F7DE3C3) else Color(0x14FFFFFF), RoundedCornerShape(50.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .background(statusBackground, RoundedCornerShape(50.dp))
+            .border(1.dp, statusColor.copy(alpha = 0.28f), RoundedCornerShape(50.dp))
+            .padding(horizontal = 15.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(8.dp).background(if (active) MaterialTheme.colorScheme.primary else Color(0xFF788399), CircleShape))
+        Box(Modifier.size(8.dp).background(statusColor, CircleShape))
         Spacer(Modifier.width(8.dp))
         AnimatedContent(targetState = state, label = "status") { s ->
             Text(
                 when (s) {
-                    ConnectionState.CONNECTED -> "متصل و محافظت‌شده"
+                    ConnectionState.CONNECTED -> "متصل"
                     ConnectionState.CONNECTING -> "در حال اتصال"
                     ConnectionState.DISCONNECTING -> "در حال قطع"
                     ConnectionState.ERROR -> "خطای اتصال"
-                    else -> "اتصال برقرار نیست"
+                    else -> "آماده اتصال"
                 },
-                style = MaterialTheme.typography.labelLarge
+                style = MaterialTheme.typography.labelLarge,
+                color = if (s == ConnectionState.ERROR) Color(0xFFFFDDE1) else Color.White
             )
         }
     }
@@ -277,24 +356,62 @@ private fun ConnectionStatus(state: ConnectionState) {
 private fun PowerButton(state: ConnectionState, enabled: Boolean, compact: Boolean, onClick: () -> Unit) {
     val busy = state == ConnectionState.CONNECTING || state == ConnectionState.DISCONNECTING
     val connected = state == ConnectionState.CONNECTED
-    val scale by animateFloatAsState(if (connected) 1.04f else 1f, label = "powerScale")
-    val transition = rememberInfiniteTransition(label = "ring")
+    val error = state == ConnectionState.ERROR
+    val buttonScale by animateFloatAsState(
+        targetValue = if (connected) 1.045f else 1f,
+        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        label = "powerScale"
+    )
+    val transition = rememberInfiniteTransition(label = "powerAnim")
     val rotation by transition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart),
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1350, easing = LinearEasing), RepeatMode.Restart),
         label = "rotation"
     )
+    val pulse by transition.animateFloat(
+        initialValue = 0.90f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(tween(1700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse"
+    )
+    val softPulse by transition.animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(tween(950, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "softPulse"
+    )
 
-    val outer = if (compact) 150.dp else 190.dp
-    val ring = if (compact) 142.dp else 180.dp
-    val inner = if (compact) 126.dp else 158.dp
-    val icon = if (compact) 46.dp else 58.dp
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(outer).scale(scale)) {
+    val outer = if (compact) 164.dp else 205.dp
+    val halo = if (compact) 154.dp else 193.dp
+    val ring = if (compact) 146.dp else 184.dp
+    val inner = if (compact) 126.dp else 156.dp
+    val iconSize = if (compact) 50.sp else 62.sp
+    val accent = when {
+        connected -> Color(0xFF62E6BD)
+        busy -> Color(0xFF82AFFF)
+        error -> Color(0xFFFF7E8D)
+        else -> Color(0xFFB9C6DD)
+    }
+
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(outer).scale(buttonScale)) {
+        Box(
+            Modifier
+                .size(halo)
+                .scale(if (connected || busy) pulse else 1f)
+                .background(accent.copy(alpha = if (connected) 0.11f else if (busy) 0.08f else 0.035f), CircleShape)
+        )
+        Box(
+            Modifier
+                .size(ring)
+                .scale(if (connected) softPulse else 1f)
+                .border(1.dp, accent.copy(alpha = if (connected || busy) 0.55f else 0.25f), CircleShape)
+        )
         if (busy) {
             CircularProgressIndicator(
                 Modifier.size(ring).rotate(rotation),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary
+                strokeWidth = 3.dp,
+                color = accent
             )
         }
         Box(
@@ -302,20 +419,19 @@ private fun PowerButton(state: ConnectionState, enabled: Boolean, compact: Boole
                 .size(inner)
                 .background(
                     Brush.radialGradient(
-                        if (connected) listOf(Color(0xFF1C4A40), Color(0xFF101B1A))
-                        else listOf(Color(0xFF192338), Color(0xFF0E1523))
-                    ), CircleShape
+                        when {
+                            connected -> listOf(Color(0xFF174238), Color(0xFF0A1716))
+                            error -> listOf(Color(0xFF3A1A22), Color(0xFF151018))
+                            else -> listOf(Color(0xFF17243A), Color(0xFF0B111D))
+                        }
+                    ),
+                    CircleShape
                 )
-                .border(1.dp, if (connected) MaterialTheme.colorScheme.primary else Color(0xFF2C3850), CircleShape)
+                .border(1.dp, accent.copy(alpha = 0.55f), CircleShape)
                 .clickable(enabled = enabled && !busy, onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                Icons.Default.PowerSettingsNew,
-                contentDescription = "اتصال",
-                tint = if (connected) MaterialTheme.colorScheme.primary else Color.White,
-                modifier = Modifier.size(icon)
-            )
+            Text("⏻", fontSize = iconSize, color = accent, fontWeight = FontWeight.Normal)
         }
     }
 }
@@ -325,53 +441,113 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, Color(0xFF222E43))
+        color = Color(0xD9121A2A),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, Color(0xFF26334A))
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(45.dp).background(Color(0x1F7DE3C3), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Bolt, null, tint = MaterialTheme.colorScheme.primary)
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(46.dp)
+                    .background(Color(0x247DE3C3), RoundedCornerShape(15.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("⚡", fontSize = 22.sp)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(server?.name ?: "سروری انتخاب نشده", style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
-                    server?.let { "${protocolLabel(it.protocol)}${if (it.sourceName.isNotBlank()) " • ${it.sourceName}" else ""}" } ?: "لیست سرورها را باز کنید",
+                    server?.let {
+                        "${protocolLabel(it.protocol)}${if (it.sourceName.isNotBlank()) " • ${it.sourceName}" else ""}"
+                    } ?: "لیست سرورها را باز کنید",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
             }
-            if (latency != null) Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.width(4.dp))
-            Icon(Icons.Default.KeyboardArrowLeft, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (latency != null) {
+                Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.width(7.dp))
+            Text("‹", fontSize = 30.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 private fun ErrorCard(text: String) {
-    Surface(Modifier.fillMaxWidth(), color = Color(0x22FF7E86), shape = RoundedCornerShape(16.dp)) {
-        Text(text, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+    var expanded by remember(text) { mutableStateOf(false) }
+    val friendly = friendlyError(text)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFF431D27),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Color(0x88FF7E8D))
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .background(Color(0xFFFF7E8D), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("!", color = Color(0xFF2A0B12), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("اتصال برقرار نشد", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    Text(friendly, color = Color(0xFFFFDDE1), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.align(Alignment.End)) {
+                Text(if (expanded) "بستن جزئیات" else "جزئیات فنی", color = Color(0xFFFFB7C0))
+            }
+            if (expanded) {
+                Text(
+                    text,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x66130A0D), RoundedCornerShape(12.dp))
+                        .padding(10.dp),
+                    color = Color(0xFFFFC8CE),
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Start
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun Footer() {
-    Text("طراحی و توسعه: امید", style = MaterialTheme.typography.labelMedium, color = Color(0xFF6F7B8E))
+    Text("طراحی و توسعه: امید", style = MaterialTheme.typography.labelMedium, color = Color(0xFF78859A))
     Spacer(Modifier.height(4.dp))
 }
 
 @Composable
-private fun ServerList(servers: List<VpnServer>, selectedId: String?, latencies: Map<String, Int?>, onSelect: (VpnServer) -> Unit) {
+private fun ServerList(
+    servers: List<VpnServer>,
+    selectedId: String?,
+    latencies: Map<String, Int?>,
+    onSelect: (VpnServer) -> Unit
+) {
     Column(Modifier.fillMaxWidth().fillMaxHeight(0.78f)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column(Modifier.weight(1f)) {
                 Text("انتخاب سرور", style = MaterialTheme.typography.headlineSmall)
-                Text("سرور سریع‌تر به‌صورت خودکار انتخاب می‌شود", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "سرور سریع‌تر به‌صورت خودکار انتخاب می‌شود",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
-            Icon(Icons.Default.Storage, null, tint = MaterialTheme.colorScheme.primary)
+            Text("◉", fontSize = 23.sp, color = MaterialTheme.colorScheme.primary)
         }
         HorizontalDivider(color = Color(0xFF202A3D))
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -381,24 +557,34 @@ private fun ServerList(servers: List<VpnServer>, selectedId: String?, latencies:
                     Modifier
                         .fillMaxWidth()
                         .clickable { onSelect(server) }
-                        .background(if (selected) Color(0x147DE3C3) else Color.Transparent, RoundedCornerShape(16.dp))
+                        .background(if (selected) Color(0x187DE3C3) else Color.Transparent, RoundedCornerShape(16.dp))
                         .padding(horizontal = 12.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(38.dp).background(Color(0x12FFFFFF), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.size(40.dp).background(Color(0x13FFFFFF), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(protocolShort(server.protocol), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(server.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                        Text(protocolLabel(server.protocol), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            protocolLabel(server.protocol),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     val latency = latencies[server.id]
-                    if (latency != null) Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
-                    else CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 1.5.dp)
+                    if (latency != null) {
+                        Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
+                    } else {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 1.5.dp)
+                    }
                     if (selected) {
                         Spacer(Modifier.width(10.dp))
-                        Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Text("✓", fontSize = 20.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -421,20 +607,25 @@ private fun PreConnectAdDialog(ad: PreConnectAd, onFinished: () -> Unit, onCance
         Surface(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface
+            color = Color(0xFF111A2B)
         ) {
             Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 AsyncImage(
                     model = ad.imageUrl,
                     contentDescription = ad.title,
-                    modifier = Modifier.fillMaxWidth().height(260.dp).background(Color(0xFF0B101C), RoundedCornerShape(20.dp))
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                        .background(Color(0xFF0B101C), RoundedCornerShape(20.dp))
                 )
                 Spacer(Modifier.height(16.dp))
                 Text(ad.title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
                 if (!ad.targetUrl.isNullOrBlank()) {
                     TextButton(onClick = {
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ad.targetUrl))) }
-                    }) { Text("مشاهده پیشنهاد") }
+                    }) {
+                        Text("مشاهده پیشنهاد")
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
@@ -444,11 +635,27 @@ private fun PreConnectAdDialog(ad: PreConnectAd, onFinished: () -> Unit, onCance
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text(if (seconds > 0) "اتصال تا ${seconds.fa()} ثانیه دیگر" else "اتصال به وی پی ان", color = MaterialTheme.colorScheme.onPrimary)
+                    Text(
+                        if (seconds > 0) "اتصال تا ${seconds.fa()} ثانیه دیگر" else "اتصال به وی پی ان",
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
                 TextButton(onClick = onCancel) { Text("انصراف") }
             }
         }
+    }
+}
+
+private fun friendlyError(text: String): String {
+    val v = text.lowercase()
+    return when {
+        "xray.xudp.basekey" in v -> "هسته اتصال به‌درستی آماده نشده بود؛ این مورد در نسخه ۱.۰.۲ اصلاح شده است."
+        "vless without tls" in v -> "این سرور از VLESS قدیمی بدون TLS استفاده می‌کند. سرور دیگری را انتخاب کنید."
+        "trojan without tls" in v -> "این سرور Trojan بدون TLS است و توسط هسته جدید پذیرفته نمی‌شود."
+        "failed to parse json config" in v || "config error" in v -> "تنظیمات این سرور با هسته فعلی سازگار نیست. سرور دیگری را امتحان کنید."
+        "timeout" in v || "timed out" in v -> "پاسخ سرور دیر رسید. یک سرور با پینگ کمتر انتخاب کنید."
+        "network" in v || "connection" in v -> "ارتباط با سرور برقرار نشد. اینترنت یا سرور را بررسی کنید."
+        else -> "سرور پاسخ مناسب نداد. سرور دیگری را امتحان کنید."
     }
 }
 

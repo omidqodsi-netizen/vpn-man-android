@@ -4,10 +4,33 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/app/libs" "$ROOT/app/src/main/res/font" "$ROOT/app/src/main/assets/licenses"
 
-echo "Downloading latest AndroidLibXrayLite AAR..."
-RELEASE_JSON="$(curl -fsSL --retry 3 https://api.github.com/repos/2dust/AndroidLibXrayLite/releases/latest)"
-AAR_URL="$(printf '%s' "$RELEASE_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(a["browser_download_url"] for a in d["assets"] if a["name"]=="libv2ray.aar"))')"
-curl -fL --retry 3 "$AAR_URL" -o "$ROOT/app/libs/libv2ray.aar"
+# Pin the core build so future upstream changes do not silently change our APK.
+XRAY_LIB_TAG="v26.7.5"
+AAR="$ROOT/app/libs/libv2ray.aar"
+AAR_URL="https://github.com/2dust/AndroidLibXrayLite/releases/download/${XRAY_LIB_TAG}/libv2ray.aar"
+
+echo "Downloading AndroidLibXrayLite ${XRAY_LIB_TAG}..."
+curl -fL --retry 3 "$AAR_URL" -o "$AAR"
+
+echo "Slimming Xray AAR for arm64 phones..."
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+unzip -q "$AAR" -d "$TMP_DIR"
+
+# Keep only arm64-v8a. This removes emulator/x86 and old 32-bit native binaries.
+rm -rf "$TMP_DIR/jni/armeabi-v7a" "$TMP_DIR/jni/x86" "$TMP_DIR/jni/x86_64"
+
+# The current app routing does not use geoip/geosite rules. Removing these large
+# databases saves about 28 MB without affecting the current config generator.
+rm -f "$TMP_DIR/assets/geoip.dat" \
+      "$TMP_DIR/assets/geosite.dat" \
+      "$TMP_DIR/assets/geoip-only-cn-private.dat"
+
+rm -f "$AAR"
+(
+  cd "$TMP_DIR"
+  zip -qr "$AAR" .
+)
 
 echo "Downloading Vazirmatn fonts for build..."
 BASE="https://raw.githubusercontent.com/rastikerdar/vazirmatn/master/fonts/ttf"

@@ -8,7 +8,6 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import go.Seq
 import ir.omid.vpnman.MainActivity
@@ -27,8 +26,10 @@ class MyVpnService : VpnService() {
         super.onCreate()
         createNotificationChannel()
         Seq.setContext(applicationContext)
-        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID).orEmpty()
-        Libv2ray.initCoreEnv(filesDir.absolutePath, deviceId)
+        // AndroidLibXrayLite expects xray.xudp.basekey to be a Base64URL value that
+        // decodes to exactly 32 bytes. Passing ANDROID_ID directly breaks recent Xray.
+        // Empty key lets Xray generate a secure random 32-byte key internally.
+        Libv2ray.initCoreEnv(filesDir.absolutePath, "")
         coreController = Libv2ray.newCoreController(object : CoreCallbackHandler {
             override fun startup(): Long = 0L
             override fun shutdown(): Long = 0L

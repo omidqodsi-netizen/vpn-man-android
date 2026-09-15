@@ -1,0 +1,5 @@
+VPN MAN v1.0.2 UPDATE PACK
+
+Upload the CONTENTS of this folder to the root of your existing GitHub repository and overwrite matching files.
+Important: .github/workflows/build-apk.yml must also be updated.
+Keep the existing GitHub secret VPN_APP_API_KEY. Do not put the API key in source code.
