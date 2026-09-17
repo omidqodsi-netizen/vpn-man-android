@@ -43,7 +43,12 @@ class MainViewModel : ViewModel() {
             _ui.update { it.copy(loading = !userInitiated && it.servers.isEmpty(), refreshing = userInitiated, error = null) }
             api.fetchManifest().fold(
                 onSuccess = { manifest ->
-                    val supported = manifest.servers.filter { it.protocol in setOf("vless", "vmess", "trojan", "ss") }
+                    val supported = manifest.servers
+                        .filter { it.protocol in setOf("vless", "vmess", "trojan", "ss") }
+                        .sortedWith(
+                            compareByDescending<VpnServer> { it.healthScore }
+                                .thenBy { it.serverLatencyMs ?: Int.MAX_VALUE }
+                        )
                     _ui.update {
                         it.copy(
                             loading = false,
@@ -51,6 +56,7 @@ class MainViewModel : ViewModel() {
                             servers = supported,
                             selectedServerId = it.selectedServerId?.takeIf { id -> supported.any { s -> s.id == id } }
                                 ?: supported.firstOrNull()?.id,
+                            latencies = emptyMap(),
                             ad = manifest.ad,
                             maintenance = manifest.maintenance,
                             minimumVersion = manifest.minimumAppVersion,
@@ -72,15 +78,22 @@ class MainViewModel : ViewModel() {
     private fun testLatencies() {
         viewModelScope.launch {
             val servers = _ui.value.servers
-            val semaphore = Semaphore(6)
+            val semaphore = Semaphore(8)
             val results = servers.map { server ->
                 async {
                     semaphore.withPermit { server.id to LatencyTester.test(server) }
                 }
             }.awaitAll().toMap()
+
             _ui.update { state ->
-                val best = results.filterValues { it != null }.minByOrNull { it.value ?: Int.MAX_VALUE }?.key
+                val ordered = state.servers.sortedWith(
+                    compareBy<VpnServer> {
+                        results[it.id] ?: it.serverLatencyMs ?: Int.MAX_VALUE
+                    }.thenByDescending { it.healthScore }
+                )
+                val best = ordered.firstOrNull { (results[it.id] ?: it.serverLatencyMs) != null }?.id
                 state.copy(
+                    servers = ordered,
                     latencies = results,
                     selectedServerId = if (!manuallySelected && best != null) best else state.selectedServerId
                 )

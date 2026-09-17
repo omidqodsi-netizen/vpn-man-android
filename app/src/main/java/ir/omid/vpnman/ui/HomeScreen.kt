@@ -466,8 +466,9 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
                     maxLines = 1
                 )
             }
-            if (latency != null) {
-                Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
+            val shownLatency = latency ?: server?.serverLatencyMs
+            if (shownLatency != null) {
+                Text("${shownLatency.fa()} ms", color = latencyColor(shownLatency), style = MaterialTheme.typography.labelMedium)
             }
             Spacer(Modifier.width(7.dp))
             Text("‹", fontSize = 30.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -571,16 +572,23 @@ private fun ServerList(
                     Column(Modifier.weight(1f)) {
                         Text(server.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                         Text(
-                            protocolLabel(server.protocol),
+                            buildString {
+                                append(protocolLabel(server.protocol))
+                                if (server.autoManaged) append(" • تست‌شده خودکار")
+                                if (server.healthScore > 0) append(" • امتیاز ${server.healthScore.fa()}")
+                            },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
                         )
                     }
-                    val latency = latencies[server.id]
+                    val latency = latencies[server.id] ?: server.serverLatencyMs
                     if (latency != null) {
                         Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
-                    } else {
+                    } else if (!latencies.containsKey(server.id)) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 1.5.dp)
+                    } else {
+                        Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (selected) {
                         Spacer(Modifier.width(10.dp))
@@ -649,7 +657,7 @@ private fun PreConnectAdDialog(ad: PreConnectAd, onFinished: () -> Unit, onCance
 private fun friendlyError(text: String): String {
     val v = text.lowercase()
     return when {
-        "xray.xudp.basekey" in v -> "هسته اتصال به‌درستی آماده نشده بود؛ این مورد در نسخه ۱.۰.۲ اصلاح شده است."
+        "xray.xudp.basekey" in v -> "هسته اتصال به‌درستی آماده نشده بود؛ این مورد در نسخه‌های جدید اصلاح شده است."
         "vless without tls" in v -> "این سرور از VLESS قدیمی بدون TLS استفاده می‌کند. سرور دیگری را انتخاب کنید."
         "trojan without tls" in v -> "این سرور Trojan بدون TLS است و توسط هسته جدید پذیرفته نمی‌شود."
         "failed to parse json config" in v || "config error" in v -> "تنظیمات این سرور با هسته فعلی سازگار نیست. سرور دیگری را امتحان کنید."

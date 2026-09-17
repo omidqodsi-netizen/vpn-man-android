@@ -5,7 +5,10 @@ data class VpnServer(
     val name: String,
     val protocol: String,
     val config: String,
-    val sourceName: String = ""
+    val sourceName: String = "",
+    val serverLatencyMs: Int? = null,
+    val healthScore: Int = 0,
+    val autoManaged: Boolean = false
 )
 
 data class PreConnectAd(

@@ -48,7 +48,10 @@ class VpnPanelApi {
                                     name = item.optString("name", "سرور"),
                                     protocol = item.optString("protocol", "unknown").lowercase(),
                                     config = config,
-                                    sourceName = item.optString("source_name", "")
+                                    sourceName = item.optString("source_name", ""),
+                                    serverLatencyMs = item.optInt("server_latency_ms", -1).takeIf { it >= 0 },
+                                    healthScore = item.optInt("health_score", 0).coerceIn(0, 100),
+                                    autoManaged = item.optBoolean("auto_managed", false)
                                 )
                             )
                         }

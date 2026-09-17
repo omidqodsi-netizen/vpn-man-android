@@ -6,7 +6,7 @@ plugins {
 
 fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-val apiBaseUrl = providers.gradleProperty("VPN_API_BASE_URL").orElse("https://www.emdadkhodroteh.com/test").get()
+val apiBaseUrl = providers.gradleProperty("VPN_API_BASE_URL").orElse("").get()
 val appApiKey = providers.gradleProperty("VPN_APP_API_KEY").orElse("").get()
 
 android {
@@ -17,8 +17,8 @@ android {
         applicationId = "ir.omid.vpnman"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.1.0"
 
         // Most current Android phones are arm64. The AAR is also slimmed in prepare-deps.sh.
         ndk {
