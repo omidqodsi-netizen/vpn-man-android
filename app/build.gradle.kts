@@ -8,6 +8,11 @@ fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace(
 
 val apiBaseUrl = providers.gradleProperty("VPN_API_BASE_URL").orElse("").get()
 val appApiKey = providers.gradleProperty("VPN_APP_API_KEY").orElse("").get()
+val signingStoreFile = providers.gradleProperty("VPN_SIGNING_STORE_FILE").orNull
+val signingStorePassword = providers.gradleProperty("VPN_SIGNING_STORE_PASSWORD").orNull
+val signingKeyAlias = providers.gradleProperty("VPN_SIGNING_KEY_ALIAS").orNull
+val signingKeyPassword = providers.gradleProperty("VPN_SIGNING_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword).all { !it.isNullOrBlank() }
 
 android {
     namespace = "ir.omid.vpnman"
@@ -17,16 +22,34 @@ android {
         applicationId = "ir.omid.vpnman"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.1.0"
+        versionCode = 5
+        versionName = "1.1.1"
 
-        // Most current Android phones are arm64. The AAR is also slimmed in prepare-deps.sh.
         ndk {
             abiFilters += "arm64-v8a"
         }
 
         buildConfigField("String", "VPN_API_BASE_URL", apiBaseUrl.asBuildConfigString())
         buildConfigField("String", "VPN_APP_API_KEY", appApiKey.asBuildConfigString())
+    }
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures {

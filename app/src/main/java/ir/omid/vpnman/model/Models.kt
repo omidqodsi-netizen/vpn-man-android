@@ -8,7 +8,10 @@ data class VpnServer(
     val sourceName: String = "",
     val serverLatencyMs: Int? = null,
     val healthScore: Int = 0,
-    val autoManaged: Boolean = false
+    val autoManaged: Boolean = false,
+    val serverGroup: String = if (autoManaged) "free" else "manual",
+    val clientVerified: Boolean = false,
+    val clientLatencyMs: Int? = null
 )
 
 data class PreConnectAd(

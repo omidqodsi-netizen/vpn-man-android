@@ -12,6 +12,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,10 +58,14 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -181,6 +186,14 @@ fun HomeScreen(
                     )
                     Spacer(Modifier.height(if (compact) 14.dp else 24.dp))
                     ServerCard(selected, ui.latencies[selected?.id], onClick = { showServers = true })
+                    if (ui.verifyingFree) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "در حال تست واقعی کانفیگ‌های رایگان…",
+                            color = Color(0xFF8FA7FF),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
                     Spacer(Modifier.height(14.dp))
                     if (errorText != null) ErrorCard(errorText)
                     Spacer(Modifier.weight(1f))
@@ -195,9 +208,10 @@ fun HomeScreen(
         ModalBottomSheet(
             onDismissRequest = { showServers = false },
             sheetState = sheetState,
-            containerColor = Color(0xFF0D1422)
+            containerColor = Color(0xFF0D1422),
+            contentColor = Color.White
         ) {
-            ServerList(ui.servers, ui.selectedServerId, ui.latencies) { server ->
+            ServerList(ui.servers, ui.selectedServerId, ui.latencies, ui.verifyingFree) { server ->
                 viewModel.select(server)
                 showServers = false
             }
@@ -221,7 +235,7 @@ fun HomeScreen(
 
     if (showAbout) {
         Dialog(onDismissRequest = { showAbout = false }) {
-            Surface(shape = RoundedCornerShape(26.dp), color = Color(0xFF111A2B)) {
+            Surface(shape = RoundedCornerShape(26.dp), color = Color(0xFF111A2B), contentColor = Color.White) {
                 Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("◈", fontSize = 38.sp, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(8.dp))
@@ -386,7 +400,6 @@ private fun PowerButton(state: ConnectionState, enabled: Boolean, compact: Boole
     val halo = if (compact) 154.dp else 193.dp
     val ring = if (compact) 146.dp else 184.dp
     val inner = if (compact) 126.dp else 156.dp
-    val iconSize = if (compact) 50.sp else 62.sp
     val accent = when {
         connected -> Color(0xFF62E6BD)
         busy -> Color(0xFF82AFFF)
@@ -431,7 +444,61 @@ private fun PowerButton(state: ConnectionState, enabled: Boolean, compact: Boole
                 .clickable(enabled = enabled && !busy, onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            Text("⏻", fontSize = iconSize, color = accent, fontWeight = FontWeight.Normal)
+            ConnectionGlyph(state = state, color = accent, sizeDp = if (compact) 54.dp else 66.dp)
+        }
+    }
+}
+
+@Composable
+private fun ConnectionGlyph(state: ConnectionState, color: Color, sizeDp: androidx.compose.ui.unit.Dp) {
+    Canvas(Modifier.size(sizeDp)) {
+        val w = size.minDimension
+        val stroke = w * 0.095f
+        when (state) {
+            ConnectionState.CONNECTED -> {
+                drawLine(
+                    color = color,
+                    start = androidx.compose.ui.geometry.Offset(w * 0.22f, w * 0.53f),
+                    end = androidx.compose.ui.geometry.Offset(w * 0.43f, w * 0.73f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = color,
+                    start = androidx.compose.ui.geometry.Offset(w * 0.43f, w * 0.73f),
+                    end = androidx.compose.ui.geometry.Offset(w * 0.80f, w * 0.30f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+            }
+            ConnectionState.ERROR -> {
+                drawLine(
+                    color = color,
+                    start = androidx.compose.ui.geometry.Offset(w * 0.5f, w * 0.22f),
+                    end = androidx.compose.ui.geometry.Offset(w * 0.5f, w * 0.58f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawCircle(color = color, radius = stroke * 0.55f, center = androidx.compose.ui.geometry.Offset(w * 0.5f, w * 0.78f))
+            }
+            else -> {
+                drawArc(
+                    color = color,
+                    startAngle = -45f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    topLeft = androidx.compose.ui.geometry.Offset(w * 0.16f, w * 0.16f),
+                    size = androidx.compose.ui.geometry.Size(w * 0.68f, w * 0.68f)
+                )
+                drawLine(
+                    color = color,
+                    start = androidx.compose.ui.geometry.Offset(w * 0.5f, w * 0.10f),
+                    end = androidx.compose.ui.geometry.Offset(w * 0.5f, w * 0.47f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+            }
         }
     }
 }
@@ -442,6 +509,7 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xD9121A2A),
+        contentColor = Color.White,
         shape = RoundedCornerShape(24.dp),
         border = BorderStroke(1.dp, Color(0xFF26334A))
     ) {
@@ -456,10 +524,10 @@ private fun ServerCard(server: VpnServer?, latency: Int?, onClick: () -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(server?.name ?: "سروری انتخاب نشده", style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                Text(server?.name ?: "سروری انتخاب نشده", style = MaterialTheme.typography.titleMedium.copy(textDirection = TextDirection.ContentOrRtl), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     server?.let {
-                        "${protocolLabel(it.protocol)}${if (it.sourceName.isNotBlank()) " • ${it.sourceName}" else ""}"
+                        "${if (it.autoManaged) "رایگان • " else "شخصی • "}${protocolLabel(it.protocol)}${if (it.sourceName.isNotBlank()) " • ${it.sourceName}" else ""}"
                     } ?: "لیست سرورها را باز کنید",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -484,6 +552,7 @@ private fun ErrorCard(text: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xFF431D27),
+        contentColor = Color.White,
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, Color(0x88FF7E8D))
     ) {
@@ -533,71 +602,129 @@ private fun ServerList(
     servers: List<VpnServer>,
     selectedId: String?,
     latencies: Map<String, Int?>,
+    verifyingFree: Boolean,
     onSelect: (VpnServer) -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().fillMaxHeight(0.78f)) {
+    var filter by remember { mutableStateOf(ServerFilter.ALL) }
+    val manualCount = servers.count { !it.autoManaged }
+    val freeCount = servers.count { it.autoManaged }
+    val visible = when (filter) {
+        ServerFilter.ALL -> servers
+        ServerFilter.MANUAL -> servers.filter { !it.autoManaged }
+        ServerFilter.FREE -> servers.filter { it.autoManaged }
+    }
+
+    Column(Modifier.fillMaxWidth().fillMaxHeight(0.82f)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("انتخاب سرور", style = MaterialTheme.typography.headlineSmall)
+                Text("انتخاب سرور", style = MaterialTheme.typography.headlineSmall, color = Color.White)
                 Text(
-                    "سرور سریع‌تر به‌صورت خودکار انتخاب می‌شود",
+                    if (verifyingFree) "رایگان‌ها فقط بعد از تست واقعی نمایش داده می‌شوند" else "سرورهای شخصی و رایگان از هم جدا هستند",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
             Text("◉", fontSize = 23.sp, color = MaterialTheme.colorScheme.primary)
         }
+
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
+            FilterChip("همه ${servers.size.fa()}", filter == ServerFilter.ALL, Modifier.weight(1f)) { filter = ServerFilter.ALL }
+            Spacer(Modifier.width(8.dp))
+            FilterChip("شخصی ${manualCount.fa()}", filter == ServerFilter.MANUAL, Modifier.weight(1f)) { filter = ServerFilter.MANUAL }
+            Spacer(Modifier.width(8.dp))
+            FilterChip("رایگان ${freeCount.fa()}", filter == ServerFilter.FREE, Modifier.weight(1f)) { filter = ServerFilter.FREE }
+        }
+
         HorizontalDivider(color = Color(0xFF202A3D))
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
-            items(servers, key = { it.id }) { server ->
-                val selected = server.id == selectedId
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(server) }
-                        .background(if (selected) Color(0x187DE3C3) else Color.Transparent, RoundedCornerShape(16.dp))
-                        .padding(horizontal = 12.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        Modifier.size(40.dp).background(Color(0x13FFFFFF), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
+
+        if (visible.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    if (filter == ServerFilter.FREE && verifyingFree) "در حال بررسی واقعی کانفیگ‌های رایگان…" else "سروری در این بخش وجود ندارد",
+                    color = Color(0xFFB8C4D6),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        } else {
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                items(visible, key = { it.id }) { server ->
+                    val selected = server.id == selectedId
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(server) }
+                            .background(if (selected) Color(0x187DE3C3) else Color.Transparent, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 12.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(protocolShort(server.protocol), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Box(
+                            Modifier.size(40.dp).background(Color(0x13FFFFFF), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(protocolShort(server.protocol), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                server.name,
+                                style = MaterialTheme.typography.titleMedium.copy(textDirection = TextDirection.ContentOrRtl),
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                buildString {
+                                    append(if (server.autoManaged) "رایگان" else "شخصی")
+                                    append(" • ")
+                                    append(protocolLabel(server.protocol))
+                                    if (server.autoManaged && server.clientVerified) append(" • تست واقعی ✓")
+                                    if (server.healthScore > 0) append(" • امتیاز ${server.healthScore.fa()}")
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        val latency = latencies[server.id] ?: server.clientLatencyMs ?: server.serverLatencyMs
+                        if (latency != null) {
+                            Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
+                        } else {
+                            Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (selected) {
+                            Spacer(Modifier.width(10.dp))
+                            Text("✓", fontSize = 20.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(server.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                        Text(
-                            buildString {
-                                append(protocolLabel(server.protocol))
-                                if (server.autoManaged) append(" • تست‌شده خودکار")
-                                if (server.healthScore > 0) append(" • امتیاز ${server.healthScore.fa()}")
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
-                    }
-                    val latency = latencies[server.id] ?: server.serverLatencyMs
-                    if (latency != null) {
-                        Text("${latency.fa()} ms", color = latencyColor(latency), style = MaterialTheme.typography.labelMedium)
-                    } else if (!latencies.containsKey(server.id)) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 1.5.dp)
-                    } else {
-                        Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (selected) {
-                        Spacer(Modifier.width(10.dp))
-                        Text("✓", fontSize = 20.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                    }
+                    Spacer(Modifier.height(4.dp))
                 }
-                Spacer(Modifier.height(4.dp))
             }
         }
+    }
+}
+
+private enum class ServerFilter { ALL, MANUAL, FREE }
+
+@Composable
+private fun FilterChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) Color(0xFF1B5B52) else Color(0xFF121B2A),
+        contentColor = if (selected) Color(0xFFB9FFE9) else Color(0xFFB4C0D1),
+        border = BorderStroke(1.dp, if (selected) Color(0xFF46CFA8) else Color(0xFF26334A))
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelMedium
+        )
     }
 }
 
@@ -615,7 +742,8 @@ private fun PreConnectAdDialog(ad: PreConnectAd, onFinished: () -> Unit, onCance
         Surface(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF111A2B)
+            color = Color(0xFF111A2B),
+            contentColor = Color.White
         ) {
             Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 AsyncImage(
@@ -627,12 +755,12 @@ private fun PreConnectAdDialog(ad: PreConnectAd, onFinished: () -> Unit, onCance
                         .background(Color(0xFF0B101C), RoundedCornerShape(20.dp))
                 )
                 Spacer(Modifier.height(16.dp))
-                Text(ad.title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                Text(ad.title, style = MaterialTheme.typography.titleLarge, color = Color.White, textAlign = TextAlign.Center)
                 if (!ad.targetUrl.isNullOrBlank()) {
                     TextButton(onClick = {
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ad.targetUrl))) }
                     }) {
-                        Text("مشاهده پیشنهاد")
+                        Text("مشاهده پیشنهاد", color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -648,7 +776,7 @@ private fun PreConnectAdDialog(ad: PreConnectAd, onFinished: () -> Unit, onCance
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
-                TextButton(onClick = onCancel) { Text("انصراف") }
+                TextButton(onClick = onCancel) { Text("انصراف", color = Color(0xFFC5D0E0)) }
             }
         }
     }

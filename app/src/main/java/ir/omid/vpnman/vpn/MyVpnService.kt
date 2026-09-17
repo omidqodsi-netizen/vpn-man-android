@@ -3,13 +3,11 @@ package ir.omid.vpnman.vpn
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import go.Seq
 import ir.omid.vpnman.MainActivity
 import ir.omid.vpnman.R
 import ir.omid.vpnman.model.ConnectionState
@@ -25,11 +23,7 @@ class MyVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        Seq.setContext(applicationContext)
-        // AndroidLibXrayLite expects xray.xudp.basekey to be a Base64URL value that
-        // decodes to exactly 32 bytes. Passing ANDROID_ID directly breaks recent Xray.
-        // Empty key lets Xray generate a secure random 32-byte key internally.
-        Libv2ray.initCoreEnv(filesDir.absolutePath, "")
+        XrayRuntime.initialize(applicationContext)
         coreController = Libv2ray.newCoreController(object : CoreCallbackHandler {
             override fun startup(): Long = 0L
             override fun shutdown(): Long = 0L
@@ -78,12 +72,17 @@ class MyVpnService : VpnService() {
                 builder.addDnsServer("2606:4700:4700::1111")
             }
 
-            // Exclude this app UID so Xray's own upstream sockets never loop back into the VPN.
+            // Xray's upstream sockets must bypass the TUN to avoid a routing loop.
             runCatching { builder.addDisallowedApplication(packageName) }
 
             vpnInterface = builder.establish() ?: error("اندروید اجازه ساخت رابط VPN را نداد")
             coreController?.startLoop(xrayConfig, vpnInterface!!.fd)
             if (coreController?.isRunning != true) error("هسته Xray شروع نشد")
+
+            // Do not report CONNECTED merely because the core started. Verify that the
+            // selected outbound can actually reach the internet through Xray.
+            val online = verifyTunnel()
+            if (!online) error("تونل ساخته شد اما اینترنت از کانفیگ عبور نکرد")
 
             VpnStateStore.update(ConnectionState.CONNECTED, name)
             val nm = getSystemService(NotificationManager::class.java)
@@ -94,6 +93,19 @@ class MyVpnService : VpnService() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    private fun verifyTunnel(): Boolean {
+        val controller = coreController ?: return false
+        val urls = listOf(
+            "https://www.gstatic.com/generate_204",
+            "https://www.cloudflare.com/cdn-cgi/trace"
+        )
+        for (url in urls) {
+            val delay = runCatching { controller.measureDelay(url) }.getOrNull()
+            if (delay != null && delay > 0) return true
+        }
+        return false
     }
 
     private fun stopVpn() {
