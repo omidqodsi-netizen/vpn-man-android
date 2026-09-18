@@ -163,7 +163,7 @@ class MainViewModel : ViewModel() {
         // All free candidates stay visible. We only verify a bounded set per refresh so
         // the UI never waits minutes on dead public proxies.
         val toTest = candidates.take(MAX_FREE_TESTS_PER_REFRESH)
-        val semaphore = Semaphore(4)
+        val semaphore = Semaphore(1)
         var freshVerified = 0
         var rejected = 0
 
@@ -283,7 +283,7 @@ class MainViewModel : ViewModel() {
     }
 
     companion object {
-        private const val MAX_FREE_TESTS_PER_REFRESH = 28
-        private const val TARGET_VERIFIED_FREE = 12
+        private const val MAX_FREE_TESTS_PER_REFRESH = 14
+        private const val TARGET_VERIFIED_FREE = 6
     }
 }

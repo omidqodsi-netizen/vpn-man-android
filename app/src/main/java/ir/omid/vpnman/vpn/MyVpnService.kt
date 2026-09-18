@@ -20,6 +20,7 @@ class MyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var coreController: CoreController? = null
     private var currentName: String = ""
+    @Volatile private var startGeneration: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -34,7 +35,10 @@ class MyVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_DISCONNECT -> stopVpn()
+            ACTION_DISCONNECT -> {
+                startGeneration++
+                stopVpn()
+            }
             ACTION_CONNECT -> {
                 val config = intent.getStringExtra(EXTRA_CONFIG).orEmpty()
                 val name = intent.getStringExtra(EXTRA_NAME).orEmpty().ifBlank { "سرور منتخب" }
@@ -42,71 +46,71 @@ class MyVpnService : VpnService() {
                     VpnStateStore.update(ConnectionState.ERROR, error = "کانفیگ سرور خالی است")
                     stopSelf()
                 } else {
+                    val generation = ++startGeneration
                     currentName = name
                     startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $name…"))
-                    Thread { startVpn(config, name) }.start()
+                    Thread { startVpn(config, name, generation) }.start()
                 }
             }
         }
         return Service.START_NOT_STICKY
     }
 
-    private fun startVpn(rawConfig: String, name: String) {
+    private fun startVpn(rawConfig: String, name: String, generation: Long) {
         try {
             VpnStateStore.update(ConnectionState.CONNECTING, name)
             stopCoreOnly()
 
             val xrayConfig = XrayConfigFactory.build(rawConfig)
+            if (generation != startGeneration) return
+
             val builder = Builder()
                 .setSession("وی پی ان من")
-                .setMtu(1500)
+                .setMtu(TUN_MTU)
                 .addAddress("10.88.0.2", 30)
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setBlocking(true)
-
-            runCatching {
-                builder.addAddress("fd42:4242:4242::2", 64)
-                builder.addRoute("::", 0)
-                builder.addDnsServer("2606:4700:4700::1111")
-            }
-
-            // Xray's upstream sockets must bypass the TUN to avoid a routing loop.
+            // Xray runs in this app process. Excluding the whole package keeps its
+            // upstream sockets outside the VPN route and prevents a routing loop.
             runCatching { builder.addDisallowedApplication(packageName) }
 
             vpnInterface = builder.establish() ?: error("اندروید اجازه ساخت رابط VPN را نداد")
+            if (generation != startGeneration) {
+                stopCoreOnly()
+                return
+            }
+
             coreController?.startLoop(xrayConfig, vpnInterface!!.fd)
+
+            // startLoop is synchronous for core creation/startup. A short grace period
+            // lets immediate startup failures settle, but we do NOT run measureDelay
+            // after enabling TUN: that probe can false-fail and previously kept the UI
+            // spinning for up to ~24 seconds even when the core was already running.
+            Thread.sleep(250)
+            if (generation != startGeneration) {
+                stopCoreOnly()
+                return
+            }
             if (coreController?.isRunning != true) error("هسته Xray شروع نشد")
 
-            // Do not report CONNECTED merely because the core started. Verify that the
-            // selected outbound can actually reach the internet through Xray.
-            val online = verifyTunnel()
-            if (!online) error("تونل ساخته شد اما اینترنت از کانفیگ عبور نکرد")
-
             VpnStateStore.update(ConnectionState.CONNECTED, name)
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.notify(NOTIFICATION_ID, buildNotification("متصل به $name"))
+            getSystemService(NotificationManager::class.java)
+                .notify(NOTIFICATION_ID, buildNotification("متصل به $name"))
         } catch (t: Throwable) {
-            stopCoreOnly()
-            VpnStateStore.update(ConnectionState.ERROR, name, t.message ?: "خطای ناشناخته در اتصال")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (generation == startGeneration) {
+                stopCoreOnly()
+                VpnStateStore.update(
+                    ConnectionState.ERROR,
+                    name,
+                    t.message?.replace(Regex("\\s+"), " ")?.trim()
+                        ?: "خطای ناشناخته در اتصال"
+                )
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
-    }
-
-    private fun verifyTunnel(): Boolean {
-        val controller = coreController ?: return false
-        val urls = listOf(
-            "https://www.gstatic.com/generate_204",
-            "https://www.cloudflare.com/cdn-cgi/trace"
-        )
-        for (url in urls) {
-            val delay = runCatching { controller.measureDelay(url) }.getOrNull()
-            if (delay != null && delay > 0) return true
-        }
-        return false
     }
 
     private fun stopVpn() {
@@ -117,6 +121,7 @@ class MyVpnService : VpnService() {
         stopSelf()
     }
 
+    @Synchronized
     private fun stopCoreOnly() {
         runCatching { if (coreController?.isRunning == true) coreController?.stopLoop() }
         runCatching { vpnInterface?.close() }
@@ -124,11 +129,13 @@ class MyVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        startGeneration++
         stopVpn()
         super.onRevoke()
     }
 
     override fun onDestroy() {
+        startGeneration++
         stopCoreOnly()
         if (VpnStateStore.state.value != ConnectionState.ERROR) {
             VpnStateStore.update(ConnectionState.DISCONNECTED, currentName)
@@ -138,7 +145,11 @@ class MyVpnService : VpnService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "اتصال VPN", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "اتصال VPN",
+                NotificationManager.IMPORTANCE_LOW
+            )
             channel.description = "وضعیت اتصال وی پی ان من"
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
@@ -171,5 +182,6 @@ class MyVpnService : VpnService() {
         const val EXTRA_NAME = "name"
         private const val CHANNEL_ID = "vpn_connection"
         private const val NOTIFICATION_ID = 901
+        private const val TUN_MTU = 1400
     }
 }

@@ -113,7 +113,10 @@ class VpnPanelApi {
                 val config = item.optString("config").trim()
                 if (config.isBlank()) continue
                 val autoManaged = forceAutoManaged ?: item.optBoolean("auto_managed", false)
-                val protocol = item.optString("protocol", "unknown").lowercase()
+                val declaredProtocol = item.optString("protocol", "").trim().lowercase()
+                val schemeProtocol = config.substringBefore("://", "").trim().lowercase()
+                val protocol = declaredProtocol.takeIf { it in setOf("vless","vmess","trojan","ss") }
+                    ?: schemeProtocol
                 add(
                     VpnServer(
                         id = item.optString("id").ifBlank { config.hashCode().toUInt().toString(16) },

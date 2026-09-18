@@ -177,7 +177,7 @@ fun HomeScreen(
                     Text(
                         when (connection) {
                             ConnectionState.CONNECTED -> "اتصال امن برقرار است"
-                            ConnectionState.CONNECTING -> "در حال ساخت اتصال امن…"
+                            ConnectionState.CONNECTING -> "در حال راه‌اندازی تونل…"
                             ConnectionState.DISCONNECTING -> "در حال قطع اتصال…"
                             ConnectionState.ERROR -> "اتصال برقرار نشد"
                             else -> "برای اتصال، دکمه را لمس کنید"

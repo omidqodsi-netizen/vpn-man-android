@@ -13,6 +13,7 @@ data class ProxyTestResult(
 )
 
 object ProxyHealthTester {
+    private val nativeProbeLock = Any()
     private val testUrls = listOf(
         "https://www.gstatic.com/generate_204",
         "https://www.cloudflare.com/cdn-cgi/trace"
@@ -26,20 +27,23 @@ object ProxyHealthTester {
                 reason = shortReason("ساخت کانفیگ", configResult.exceptionOrNull())
             )
 
-        var lastReason: String? = null
-        for (url in testUrls) {
-            val measured = runCatching { Libv2ray.measureOutboundDelay(config, url) }
-            val delay = measured.getOrNull()
-            if (delay != null && delay > 0) {
-                return@withContext ProxyTestResult(
-                    ok = true,
-                    latencyMs = delay.coerceAtMost(9999).toInt()
-                )
+        // AndroidLibXrayLite creates temporary Xray core instances for this method.
+        // Running several of them concurrently can race inside the native Go runtime.
+        synchronized(nativeProbeLock) {
+            var lastReason: String? = null
+            for (url in testUrls) {
+                val measured = runCatching { Libv2ray.measureOutboundDelay(config, url) }
+                val delay = measured.getOrNull()
+                if (delay != null && delay > 0) {
+                    return@synchronized ProxyTestResult(
+                        ok = true,
+                        latencyMs = delay.coerceAtMost(9999).toInt()
+                    )
+                }
+                lastReason = shortReason("تست اینترنت", measured.exceptionOrNull())
             }
-            lastReason = shortReason("تست اینترنت", measured.exceptionOrNull())
+            ProxyTestResult(false, reason = lastReason ?: "پاسخ اینترنتی از پراکسی دریافت نشد")
         }
-
-        ProxyTestResult(false, reason = lastReason ?: "پاسخ اینترنتی از تونل دریافت نشد")
     }
 
     private fun shortReason(prefix: String, error: Throwable?): String {
