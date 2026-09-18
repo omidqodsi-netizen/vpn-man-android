@@ -22,9 +22,8 @@ object XrayConfigFactory {
         root.put("inbounds", JSONArray().put(
             JSONObject()
                 .put("tag", "tun-in")
-                .put("port", 0)
                 .put("protocol", "tun")
-                .put("settings", JSONObject().put("name", "vpnman").put("mtu", 1400))
+                .put("settings", JSONObject().put("name", "vpnman").put("mtu", 1500))
         ))
         root.put("outbounds", JSONArray()
             .put(outbound)

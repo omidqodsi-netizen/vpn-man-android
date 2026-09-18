@@ -20,7 +20,6 @@ class MyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var coreController: CoreController? = null
     private var currentName: String = ""
-    @Volatile private var startGeneration: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -35,10 +34,7 @@ class MyVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_DISCONNECT -> {
-                startGeneration++
-                stopVpn()
-            }
+            ACTION_DISCONNECT -> stopVpn()
             ACTION_CONNECT -> {
                 val config = intent.getStringExtra(EXTRA_CONFIG).orEmpty()
                 val name = intent.getStringExtra(EXTRA_NAME).orEmpty().ifBlank { "سرور منتخب" }
@@ -46,24 +42,21 @@ class MyVpnService : VpnService() {
                     VpnStateStore.update(ConnectionState.ERROR, error = "کانفیگ سرور خالی است")
                     stopSelf()
                 } else {
-                    val generation = ++startGeneration
                     currentName = name
                     startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $name…"))
-                    Thread { startVpn(config, name, generation) }.start()
+                    Thread { startVpn(config, name) }.start()
                 }
             }
         }
         return Service.START_NOT_STICKY
     }
 
-    private fun startVpn(rawConfig: String, name: String, generation: Long) {
+    private fun startVpn(rawConfig: String, name: String) {
         try {
             VpnStateStore.update(ConnectionState.CONNECTING, name)
             stopCoreOnly()
 
             val xrayConfig = XrayConfigFactory.build(rawConfig)
-            if (generation != startGeneration) return
-
             val builder = Builder()
                 .setSession("وی پی ان من")
                 .setMtu(TUN_MTU)
@@ -72,44 +65,42 @@ class MyVpnService : VpnService() {
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
 
-            // Xray runs in this app process. Excluding the whole package keeps its
-            // upstream sockets outside the VPN route and prevents a routing loop.
+            // Android's VpnService file descriptor is non-blocking by default.
+            // AndroidLibXrayLite worked correctly in the known-good v1.1.0 build
+            // with a blocking TUN fd; without this the core can report running
+            // while user traffic never actually crosses the tunnel.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                builder.setBlocking(true)
+            }
+
+            // Route IPv6 through the VPN as well. Leaving IPv6 outside the VPN can
+            // make apps/sites appear filtered even when IPv4 is tunneled correctly.
+            runCatching {
+                builder.addAddress("fd42:4242:4242::2", 64)
+                builder.addRoute("::", 0)
+                builder.addDnsServer("2606:4700:4700::1111")
+            }
+
+            // Keep Xray's own upstream sockets out of the TUN to avoid a route loop.
             runCatching { builder.addDisallowedApplication(packageName) }
 
             vpnInterface = builder.establish() ?: error("اندروید اجازه ساخت رابط VPN را نداد")
-            if (generation != startGeneration) {
-                stopCoreOnly()
-                return
-            }
-
             coreController?.startLoop(xrayConfig, vpnInterface!!.fd)
-
-            // startLoop is synchronous for core creation/startup. A short grace period
-            // lets immediate startup failures settle, but we do NOT run measureDelay
-            // after enabling TUN: that probe can false-fail and previously kept the UI
-            // spinning for up to ~24 seconds even when the core was already running.
-            Thread.sleep(250)
-            if (generation != startGeneration) {
-                stopCoreOnly()
-                return
-            }
             if (coreController?.isRunning != true) error("هسته Xray شروع نشد")
 
             VpnStateStore.update(ConnectionState.CONNECTED, name)
             getSystemService(NotificationManager::class.java)
                 .notify(NOTIFICATION_ID, buildNotification("متصل به $name"))
         } catch (t: Throwable) {
-            if (generation == startGeneration) {
-                stopCoreOnly()
-                VpnStateStore.update(
-                    ConnectionState.ERROR,
-                    name,
-                    t.message?.replace(Regex("\\s+"), " ")?.trim()
-                        ?: "خطای ناشناخته در اتصال"
-                )
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
+            stopCoreOnly()
+            VpnStateStore.update(
+                ConnectionState.ERROR,
+                name,
+                t.message?.replace(Regex("\\s+"), " ")?.trim()
+                    ?: "خطای ناشناخته در اتصال"
+            )
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
     }
 
@@ -121,7 +112,6 @@ class MyVpnService : VpnService() {
         stopSelf()
     }
 
-    @Synchronized
     private fun stopCoreOnly() {
         runCatching { if (coreController?.isRunning == true) coreController?.stopLoop() }
         runCatching { vpnInterface?.close() }
@@ -129,13 +119,11 @@ class MyVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        startGeneration++
         stopVpn()
         super.onRevoke()
     }
 
     override fun onDestroy() {
-        startGeneration++
         stopCoreOnly()
         if (VpnStateStore.state.value != ConnectionState.ERROR) {
             VpnStateStore.update(ConnectionState.DISCONNECTED, currentName)
@@ -182,6 +170,6 @@ class MyVpnService : VpnService() {
         const val EXTRA_NAME = "name"
         private const val CHANNEL_ID = "vpn_connection"
         private const val NOTIFICATION_ID = 901
-        private const val TUN_MTU = 1400
+        private const val TUN_MTU = 1500
     }
 }

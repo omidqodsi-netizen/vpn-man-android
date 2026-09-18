@@ -93,7 +93,7 @@ jobs:
           set -e
           mkdir -p output
           SRC="app/build/outputs/apk/release/app-release.apk"
-          DST="output/VPN-Man-v1.1.3-arm64-release.apk"
+          DST="output/VPN-Man-v1.1.4-arm64-release.apk"
           cp "$SRC" "$DST"
           sha256sum "$DST" > output/SHA256.txt
           echo "APK size:"
@@ -102,7 +102,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: VPN-Man-Android-v1.1.3-arm64-release
+          name: VPN-Man-Android-v1.1.4-arm64-release
           path: output/
           if-no-files-found: error
           retention-days: 30
