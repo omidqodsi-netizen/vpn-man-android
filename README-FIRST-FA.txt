@@ -1,40 +1,25 @@
-VPN Man v1.1.1 - FULL FIXED SOURCE
-=================================
+VPN Man v1.1.2 - FULL SOURCE
+===========================
 
-این فایل، سورس کامل اپ اندروید است؛ Patch نیست.
-بعد از Extract در همان سطح باید این موارد را ببینید:
+این نسخه برای رفع مشکل ناپدید شدن سرور شخصی و خالی شدن لیست رایگان ساخته شده است.
 
-.github/
-app/
-scripts/
-build.gradle.kts
-gradle.properties
-settings.gradle.kts
-README.md
-WORKFLOW-COPY-build-apk.yml
+آپدیت GitHub:
+1) کل محتوای این پوشه را در ریشه Repository آپلود و Replace کنید.
+2) مطمئن شوید .github/workflows/build-apk.yml هم جایگزین شده باشد.
+3) Secretهای VPN_API_BASE_URL و VPN_APP_API_KEY باید موجود باشند.
+4) بعد از Commit، Actions اجرا می‌شود و Artifact با نام VPN-Man-Android-v1.1.2-arm64 ساخته می‌شود.
 
-رفع خطای Build #10 و #11:
-خطای MyVpnService.kt: Unresolved reference 'Service' اصلاح شده و
-import android.app.Service به فایل اضافه شده است.
+رفتار جدید:
+- manual_servers و free_servers جدا دریافت می‌شوند و legacy servers هم به‌عنوان fallback merge می‌شود.
+- سرور شخصی از نتیجه تست رایگان مستقل است و نباید ناپدید شود.
+- همه کانفیگ‌های رایگان در لیست می‌مانند و وضعیت تست کنارشان نمایش داده می‌شود.
+- Fail شدن تست فقط وضعیت را قرمز می‌کند؛ کانفیگ را از لیست حذف نمی‌کند.
 
-روش آپلود پیشنهادی:
-1) ZIP را Extract کنید.
-2) تمام فایل‌ها و پوشه‌های داخل آن را در ریشه Repository vpn-man-android آپلود و Replace کنید.
-3) دقت کنید فایل زیر نیز Replace شود:
-   .github/workflows/build-apk.yml
-   یک کپی قابل مشاهده از آن با نام WORKFLOW-COPY-build-apk.yml هم در ریشه گذاشته شده است.
-4) دو Secret زیر باید حتماً موجود باشند:
-   VPN_API_BASE_URL
-   VPN_APP_API_KEY
+آپدیت پنل:
+فایل جداگانه VPN-Panel-v1.1.2-HOST-UPDATE.zip را روی نصب قبلی Replace کنید؛
+هیچ‌وقت config.php، storage یا uploads را حذف نکنید. سپس از پنل > آپدیت، Migrationهای دیتابیس را اجرا کنید.
+Migration جدید 005 باید اجرا شود.
 
-Workflow جدید:
-- اگر چهار Secret امضای Release تنظیم شده باشند، APK امضاشده Release می‌سازد.
-- اگر هنوز Signing تنظیم نشده باشد، Build شکست نمی‌خورد و برای تست APK Debug می‌سازد.
-
-برای اینکه نسخه‌های بعدی روی نسخه قبلی نصب شوند، چهار Secret امضای ثابت را تنظیم کنید:
-ANDROID_KEYSTORE_BASE64
-ANDROID_KEYSTORE_PASSWORD
-ANDROID_KEY_ALIAS
-ANDROID_KEY_PASSWORD
-
-کلید امضا را داخل Repository عمومی قرار ندهید.
+نکته:
+کانفیگ رایگان عمومی هیچ تضمینی برای همه اپراتورها و همه شهرهای ایران ندارد. پنل چند منبع را
+جمع می‌کند و خود گوشی وضعیت را تست می‌کند، اما کانفیگ ناموفق از لیست ناپدید نمی‌شود.

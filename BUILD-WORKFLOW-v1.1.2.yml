@@ -1,0 +1,136 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate app configuration
+        env:
+          VPN_API_BASE_URL: ${{ secrets.VPN_API_BASE_URL }}
+          VPN_APP_API_KEY: ${{ secrets.VPN_APP_API_KEY }}
+        run: |
+          if [ -z "$VPN_API_BASE_URL" ]; then
+            echo "::error::Secret VPN_API_BASE_URL is missing"
+            exit 1
+          fi
+          if [ -z "$VPN_APP_API_KEY" ]; then
+            echo "::error::Secret VPN_APP_API_KEY is missing"
+            exit 1
+          fi
+
+      - name: Detect persistent signing key
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Persistent release signing is configured."
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets are incomplete. A debug APK will be built. Debug APKs from different GitHub runners may require uninstalling the previous debug build."
+          fi
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Prepare Xray core and Vazirmatn
+        run: bash scripts/prepare-deps.sh
+
+      - name: Restore persistent signing key
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p .signing
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > .signing/vpn-man.jks
+          keytool -list -keystore .signing/vpn-man.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          ORG_GRADLE_PROJECT_VPN_API_BASE_URL: ${{ secrets.VPN_API_BASE_URL }}
+          ORG_GRADLE_PROJECT_VPN_APP_API_KEY: ${{ secrets.VPN_APP_API_KEY }}
+          ORG_GRADLE_PROJECT_VPN_SIGNING_STORE_FILE: ${{ github.workspace }}/.signing/vpn-man.jks
+          ORG_GRADLE_PROJECT_VPN_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_VPN_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_VPN_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Build debug APK
+        if: steps.signing.outputs.signed != 'true'
+        env:
+          ORG_GRADLE_PROJECT_VPN_API_BASE_URL: ${{ secrets.VPN_API_BASE_URL }}
+          ORG_GRADLE_PROJECT_VPN_APP_API_KEY: ${{ secrets.VPN_APP_API_KEY }}
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          mkdir -p output
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            SRC="app/build/outputs/apk/release/app-release.apk"
+            DST="output/VPN-Man-v1.1.2-arm64-release.apk"
+          else
+            SRC="app/build/outputs/apk/debug/app-debug.apk"
+            DST="output/VPN-Man-v1.1.2-arm64-debug.apk"
+          fi
+          cp "$SRC" "$DST"
+          sha256sum "$DST" > output/SHA256.txt
+          du -h "$DST"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPN-Man-Android-v1.1.2-arm64
+          path: output/
+          if-no-files-found: error
+          retention-days: 30

@@ -27,7 +27,17 @@ data class ManifestPayload(
     val maintenance: Boolean,
     val minimumAppVersion: String,
     val servers: List<VpnServer>,
+    val manualServers: List<VpnServer> = servers.filter { !it.autoManaged },
+    val freeServers: List<VpnServer> = servers.filter { it.autoManaged },
     val ad: PreConnectAd?
 )
 
 enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING, ERROR }
+
+enum class FreeCheckState { PENDING, TESTING, VERIFIED, FAILED }
+
+data class FreeCheckInfo(
+    val state: FreeCheckState,
+    val latencyMs: Int? = null,
+    val message: String? = null
+)

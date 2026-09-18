@@ -74,6 +74,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import ir.omid.vpnman.BuildConfig
 import ir.omid.vpnman.model.ConnectionState
+import ir.omid.vpnman.model.FreeCheckInfo
+import ir.omid.vpnman.model.FreeCheckState
 import ir.omid.vpnman.model.PreConnectAd
 import ir.omid.vpnman.model.VpnServer
 import ir.omid.vpnman.util.fa
@@ -211,7 +213,7 @@ fun HomeScreen(
             containerColor = Color(0xFF0D1422),
             contentColor = Color.White
         ) {
-            ServerList(ui.servers, ui.selectedServerId, ui.latencies, ui.verifyingFree) { server ->
+            ServerList(ui.servers, ui.selectedServerId, ui.latencies, ui.freeChecks, ui.verifyingFree) { server ->
                 viewModel.select(server)
                 showServers = false
             }
@@ -602,6 +604,7 @@ private fun ServerList(
     servers: List<VpnServer>,
     selectedId: String?,
     latencies: Map<String, Int?>,
+    freeChecks: Map<String, FreeCheckInfo>,
     verifyingFree: Boolean,
     onSelect: (VpnServer) -> Unit
 ) {
@@ -622,7 +625,7 @@ private fun ServerList(
             Column(Modifier.weight(1f)) {
                 Text("انتخاب سرور", style = MaterialTheme.typography.headlineSmall, color = Color.White)
                 Text(
-                    if (verifyingFree) "رایگان‌ها فقط بعد از تست واقعی نمایش داده می‌شوند" else "سرورهای شخصی و رایگان از هم جدا هستند",
+                    if (verifyingFree) "کانفیگ‌های رایگان دیده می‌شوند و هم‌زمان تست واقعی می‌گیرند" else "سرورهای شخصی و رایگان از هم جدا هستند",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -643,7 +646,7 @@ private fun ServerList(
         if (visible.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    if (filter == ServerFilter.FREE && verifyingFree) "در حال بررسی واقعی کانفیگ‌های رایگان…" else "سروری در این بخش وجود ندارد",
+                    if (filter == ServerFilter.FREE && verifyingFree) "در حال دریافت/بررسی کانفیگ‌های رایگان…" else "سروری در این بخش وجود ندارد",
                     color = Color(0xFFB8C4D6),
                     style = MaterialTheme.typography.bodyLarge
                 )
@@ -675,19 +678,42 @@ private fun ServerList(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val freeCheck = freeChecks[server.id]
                             Text(
                                 buildString {
                                     append(if (server.autoManaged) "رایگان" else "شخصی")
                                     append(" • ")
                                     append(protocolLabel(server.protocol))
-                                    if (server.autoManaged && server.clientVerified) append(" • تست واقعی ✓")
+                                    if (server.autoManaged) {
+                                        when (freeCheck?.state) {
+                                            FreeCheckState.VERIFIED -> append(" • تست واقعی ✓")
+                                            FreeCheckState.TESTING -> append(" • در حال تست…")
+                                            FreeCheckState.FAILED -> append(" • تست ناموفق")
+                                            FreeCheckState.PENDING, null -> append(" • در انتظار تست")
+                                        }
+                                    }
                                     if (server.healthScore > 0) append(" • امتیاز ${server.healthScore.fa()}")
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = when (freeCheck?.state) {
+                                    FreeCheckState.VERIFIED -> Color(0xFF79E8C5)
+                                    FreeCheckState.FAILED -> Color(0xFFFF9FAA)
+                                    FreeCheckState.TESTING -> Color(0xFF9CB8FF)
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val failureMessage = freeCheck?.message
+                            if (server.autoManaged && freeCheck?.state == FreeCheckState.FAILED && !failureMessage.isNullOrBlank()) {
+                                Text(
+                                    failureMessage,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF9CA9BC),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                         val latency = latencies[server.id] ?: server.clientLatencyMs ?: server.serverLatencyMs
                         if (latency != null) {

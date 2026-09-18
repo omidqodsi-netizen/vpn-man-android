@@ -142,10 +142,14 @@ object XrayConfigFactory {
     }
 
     private fun streamSettings(u: Uri, address: String, defaultSecurity: String = "none"): JSONObject {
-        val network = (q(u, "type") ?: "tcp").lowercase()
+        val network = (q(u, "type") ?: "tcp").lowercase().ifBlank { "tcp" }
+        require(network in setOf("tcp", "raw", "ws", "grpc", "httpupgrade", "xhttp", "splithttp")) {
+            "نوع انتقال $network در این نسخه پشتیبانی نمی‌شود"
+        }
         val security = (q(u, "security") ?: defaultSecurity).lowercase().let {
             if (it == "none" || it.isBlank()) "none" else it
         }
+        require(security in setOf("none", "tls", "reality")) { "امنیت $security پشتیبانی نمی‌شود" }
         val stream = JSONObject().put("network", network).put("security", security)
 
         when (network) {
@@ -166,26 +170,45 @@ object XrayConfigFactory {
         }
 
         val sni = q(u, "sni")?.takeIf(String::isNotBlank) ?: address
-        val fp = q(u, "fp")?.takeIf(String::isNotBlank) ?: "chrome"
+        val fp = normalizeFingerprint(q(u, "fp"))
         if (security == "tls") {
             val tls = JSONObject().put("serverName", sni).put("fingerprint", fp)
             q(u, "alpn")?.takeIf(String::isNotBlank)?.let { alpn ->
-                val items = JSONArray()
-                alpn.split(',').map { it.trim() }.filter { it.isNotBlank() }.forEach { items.put(it) }
-                tls.put("alpn", items)
+                val allowed = setOf("h2", "http/1.1", "h3")
+                val cleaned = alpn.split(',')
+                    .map { it.trim().lowercase() }
+                    .filter { it in allowed }
+                    .distinct()
+                if (cleaned.isNotEmpty()) {
+                    val items = JSONArray()
+                    cleaned.forEach { items.put(it) }
+                    tls.put("alpn", items)
+                }
             }
-            if (q(u, "allowInsecure") == "1") tls.put("allowInsecure", true)
+            if (truthy(q(u, "allowInsecure")) || truthy(q(u, "insecure"))) tls.put("allowInsecure", true)
             stream.put("tlsSettings", tls)
         } else if (security == "reality") {
+            val publicKey = q(u, "pbk")?.trim().orEmpty()
+            require(publicKey.isNotBlank()) { "کلید Reality در کانفیگ وجود ندارد" }
             stream.put("realitySettings", JSONObject()
                 .put("serverName", sni)
                 .put("fingerprint", fp)
-                .put("publicKey", q(u, "pbk") ?: "")
+                .put("publicKey", publicKey)
                 .put("shortId", q(u, "sid") ?: "")
                 .put("spiderX", q(u, "spx") ?: "/"))
         }
         return stream
     }
+
+    private fun normalizeFingerprint(value: String?): String {
+        val fp = value?.trim()?.lowercase().orEmpty()
+        return when (fp) {
+            "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized" -> fp
+            else -> "chrome"
+        }
+    }
+
+    private fun truthy(value: String?): Boolean = value?.trim()?.lowercase() in setOf("1", "true", "yes")
 
     private fun q(uri: Uri, name: String): String? = runCatching { uri.getQueryParameter(name) }.getOrNull()
 }

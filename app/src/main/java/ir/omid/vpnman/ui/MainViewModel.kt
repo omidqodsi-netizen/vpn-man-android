@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import ir.omid.vpnman.data.LatencyTester
 import ir.omid.vpnman.data.ProxyHealthTester
 import ir.omid.vpnman.data.VpnPanelApi
+import ir.omid.vpnman.model.FreeCheckInfo
+import ir.omid.vpnman.model.FreeCheckState
 import ir.omid.vpnman.model.PreConnectAd
 import ir.omid.vpnman.model.VpnServer
 import kotlinx.coroutines.async
@@ -24,15 +26,20 @@ data class HomeUiState(
     val servers: List<VpnServer> = emptyList(),
     val selectedServerId: String? = null,
     val latencies: Map<String, Int?> = emptyMap(),
+    val freeChecks: Map<String, FreeCheckInfo> = emptyMap(),
     val ad: PreConnectAd? = null,
     val maintenance: Boolean = false,
     val minimumVersion: String = "1.0.0",
     val freeRejectedCount: Int = 0,
     val error: String? = null
 ) {
-    val selectedServer: VpnServer? get() = servers.firstOrNull { it.id == selectedServerId } ?: servers.firstOrNull()
     val manualServers: List<VpnServer> get() = servers.filter { !it.autoManaged }
     val freeServers: List<VpnServer> get() = servers.filter { it.autoManaged }
+    val selectedServer: VpnServer?
+        get() = servers.firstOrNull { it.id == selectedServerId }
+            ?: manualServers.firstOrNull()
+            ?: freeServers.firstOrNull { it.clientVerified }
+            ?: freeServers.firstOrNull()
 }
 
 class MainViewModel : ViewModel() {
@@ -57,10 +64,11 @@ class MainViewModel : ViewModel() {
 
             api.fetchManifest().fold(
                 onSuccess = { manifest ->
-                    val supported = manifest.servers
-                        .filter { it.protocol in setOf("vless", "vmess", "trojan", "ss") }
-                    val manual = supported.filter { !it.autoManaged }
-                    val free = supported.filter { it.autoManaged }
+                    val supportedProtocols = setOf("vless", "vmess", "trojan", "ss")
+                    val manual = manifest.manualServers
+                        .filter { it.protocol in supportedProtocols }
+                    val free = manifest.freeServers
+                        .filter { it.protocol in supportedProtocols }
                         .sortedWith(
                             compareByDescending<VpnServer> { it.clientVerified }
                                 .thenBy { it.clientLatencyMs ?: Int.MAX_VALUE }
@@ -68,25 +76,38 @@ class MainViewModel : ViewModel() {
                                 .thenBy { it.serverLatencyMs ?: Int.MAX_VALUE }
                         )
 
+                    val combined = dedupe(manual + free)
+                    val initialChecks = free.associate { server ->
+                        server.id to FreeCheckInfo(
+                            state = if (server.clientVerified) FreeCheckState.VERIFIED else FreeCheckState.PENDING,
+                            latencyMs = server.clientLatencyMs
+                        )
+                    }
+
                     _ui.update { state ->
-                        val keepId = state.selectedServerId?.takeIf { id -> manual.any { it.id == id } }
+                        val keepId = state.selectedServerId?.takeIf { id -> combined.any { it.id == id } }
+                        val preferred = manual.firstOrNull()?.id
+                            ?: free.firstOrNull { it.clientVerified }?.id
+                            ?: free.firstOrNull()?.id
                         state.copy(
                             loading = false,
                             refreshing = false,
                             verifyingFree = free.isNotEmpty(),
-                            servers = manual,
-                            selectedServerId = keepId ?: manual.firstOrNull()?.id,
+                            servers = combined,
+                            selectedServerId = keepId ?: preferred,
                             latencies = emptyMap(),
+                            freeChecks = initialChecks,
                             ad = manifest.ad,
                             maintenance = manifest.maintenance,
                             minimumVersion = manifest.minimumAppVersion,
-                            error = if (manual.isEmpty() && free.isEmpty() && !manifest.maintenance) "سرور قابل پشتیبانی پیدا نشد" else null
+                            error = if (combined.isEmpty() && !manifest.maintenance) "هیچ سروری از پنل دریافت نشد" else null
                         )
                     }
 
                     if (!manifest.maintenance) {
-                        measureManualServers(manual)
-                        verifyFreeServers(free)
+                        // Keep personal servers visible no matter what happens to the free tests.
+                        viewModelScope.launch { measureManualServers(manual) }
+                        viewModelScope.launch { verifyFreeServers(free) }
                     }
                 },
                 onFailure = { e ->
@@ -119,12 +140,16 @@ class MainViewModel : ViewModel() {
 
         _ui.update { state ->
             val merged = state.latencies + results
-            val ordered = sortServers(state.servers, merged)
-            val best = ordered.firstOrNull { !it.autoManaged && merged[it.id] != null }?.id
+            val ordered = sortServers(state.servers, merged, state.freeChecks)
+            val bestManual = ordered
+                .filter { !it.autoManaged }
+                .minByOrNull { merged[it.id] ?: Int.MAX_VALUE }
+                ?.takeIf { merged[it.id] != null }
+                ?.id
             state.copy(
                 servers = ordered,
                 latencies = merged,
-                selectedServerId = if (!manuallySelected && best != null) best else state.selectedServerId
+                selectedServerId = if (!manuallySelected && bestManual != null) bestManual else state.selectedServerId
             )
         }
     }
@@ -135,64 +160,130 @@ class MainViewModel : ViewModel() {
             return
         }
 
-        val verified = mutableListOf<VpnServer>()
-        val resultMap = mutableMapOf<String, Int?>()
-        var rejected = 0
+        // All free candidates stay visible. We only verify a bounded set per refresh so
+        // the UI never waits minutes on dead public proxies.
+        val toTest = candidates.take(MAX_FREE_TESTS_PER_REFRESH)
         val semaphore = Semaphore(4)
+        var freshVerified = 0
+        var rejected = 0
 
-        for (chunk in candidates.chunked(8)) {
+        for (chunk in toTest.chunked(4)) {
+            _ui.update { state ->
+                val checks = state.freeChecks.toMutableMap()
+                chunk.forEach { server ->
+                    val old = checks[server.id]
+                    checks[server.id] = FreeCheckInfo(
+                        state = FreeCheckState.TESTING,
+                        latencyMs = old?.latencyMs,
+                        message = null
+                    )
+                }
+                state.copy(freeChecks = checks)
+            }
+
             val results = chunk.map { server ->
                 viewModelScope.async {
-                    semaphore.withPermit {
-                        val latency = ProxyHealthTester.test(server)
-                        Triple(server, latency, latency != null)
-                    }
+                    semaphore.withPermit { server to ProxyHealthTester.test(server) }
                 }
             }.awaitAll()
 
-            for ((server, latency, ok) in results) {
-                resultMap[server.id] = latency
-                if (ok) {
-                    verified += server.copy(clientVerified = true, clientLatencyMs = latency)
-                } else {
-                    rejected++
-                }
-                viewModelScope.launch { api.reportNodeFeedback(server.id, ok, latency) }
-            }
-
             _ui.update { state ->
-                val manual = state.servers.filter { !it.autoManaged }
-                val combined = manual + verified
-                val mergedLatency = state.latencies + resultMap
-                val ordered = sortServers(combined, mergedLatency)
-                val selectedStillExists = state.selectedServerId?.takeIf { id -> ordered.any { it.id == id } }
-                val best = ordered.minByOrNull { mergedLatency[it.id] ?: it.clientLatencyMs ?: it.serverLatencyMs ?: Int.MAX_VALUE }?.id
+                val checks = state.freeChecks.toMutableMap()
+                val newLatencies = state.latencies.toMutableMap()
+                val byId = results.associateBy { it.first.id }
+                val updatedServers = state.servers.map { server ->
+                    val result = byId[server.id]?.second ?: return@map server
+                    if (result.ok) {
+                        result.latencyMs?.let { newLatencies[server.id] = it }
+                        checks[server.id] = FreeCheckInfo(
+                            state = FreeCheckState.VERIFIED,
+                            latencyMs = result.latencyMs,
+                            message = "ترافیک واقعی از کانفیگ عبور کرد"
+                        )
+                        server.copy(clientVerified = true, clientLatencyMs = result.latencyMs)
+                    } else {
+                        checks[server.id] = FreeCheckInfo(
+                            state = FreeCheckState.FAILED,
+                            message = result.reason ?: "تست واقعی ناموفق بود"
+                        )
+                        server
+                    }
+                }
+
+                val ordered = sortServers(updatedServers, newLatencies, checks)
+                val bestVerifiedFree = ordered
+                    .filter { it.autoManaged && checks[it.id]?.state == FreeCheckState.VERIFIED }
+                    .minByOrNull { newLatencies[it.id] ?: it.clientLatencyMs ?: it.serverLatencyMs ?: Int.MAX_VALUE }
+                    ?.id
+                val selectedExists = state.selectedServerId?.takeIf { id -> ordered.any { it.id == id } }
+                val manualExists = ordered.any { !it.autoManaged }
                 state.copy(
                     servers = ordered,
-                    latencies = mergedLatency,
-                    selectedServerId = selectedStillExists ?: if (!manuallySelected) best else state.selectedServerId,
-                    freeRejectedCount = rejected
+                    latencies = newLatencies,
+                    freeChecks = checks,
+                    selectedServerId = when {
+                        selectedExists != null -> selectedExists
+                        !manuallySelected && manualExists -> ordered.firstOrNull { !it.autoManaged }?.id
+                        !manuallySelected && bestVerifiedFree != null -> bestVerifiedFree
+                        else -> ordered.firstOrNull()?.id
+                    }
                 )
             }
 
-            // A dozen actually-working free configs is enough for one refresh; avoids long waits on huge feeds.
-            if (verified.size >= 12) break
+            results.forEach { (server, result) ->
+                if (result.ok) freshVerified++ else rejected++
+                viewModelScope.launch {
+                    api.reportNodeFeedback(server.id, result.ok, result.latencyMs, result.reason)
+                }
+            }
+
+            if (freshVerified >= TARGET_VERIFIED_FREE) break
         }
 
         _ui.update { state ->
-            val noServers = state.servers.isEmpty()
+            val hasManual = state.manualServers.isNotEmpty()
+            val hasVerifiedFree = state.freeServers.any { state.freeChecks[it.id]?.state == FreeCheckState.VERIFIED }
+            val hasFreeCandidates = state.freeServers.isNotEmpty()
             state.copy(
                 verifyingFree = false,
-                error = if (noServers) "هیچ کانفیگ سالمی در تست واقعی پیدا نشد" else state.error
+                freeRejectedCount = rejected,
+                error = when {
+                    hasManual -> state.error
+                    hasVerifiedFree -> null
+                    hasFreeCandidates -> "کانفیگ‌های رایگان دریافت شدند اما در تست این اینترنت تأیید نشدند؛ می‌توانید از لیست آن‌ها را دستی امتحان کنید."
+                    else -> state.error
+                }
             )
         }
     }
 
-    private fun sortServers(servers: List<VpnServer>, latencies: Map<String, Int?>): List<VpnServer> {
+    private fun sortServers(
+        servers: List<VpnServer>,
+        latencies: Map<String, Int?>,
+        checks: Map<String, FreeCheckInfo>
+    ): List<VpnServer> {
+        fun freeRank(server: VpnServer): Int = when (checks[server.id]?.state) {
+            FreeCheckState.VERIFIED -> 0
+            FreeCheckState.TESTING -> 1
+            FreeCheckState.PENDING, null -> 2
+            FreeCheckState.FAILED -> 3
+        }
+
         return servers.sortedWith(
             compareBy<VpnServer> { if (it.autoManaged) 1 else 0 }
+                .thenBy { if (it.autoManaged) freeRank(it) else 0 }
                 .thenBy { latencies[it.id] ?: it.clientLatencyMs ?: it.serverLatencyMs ?: Int.MAX_VALUE }
                 .thenByDescending { it.healthScore }
         )
+    }
+
+    private fun dedupe(input: List<VpnServer>): List<VpnServer> {
+        val seen = HashSet<String>()
+        return input.filter { seen.add(it.id.ifBlank { it.config }) }
+    }
+
+    companion object {
+        private const val MAX_FREE_TESTS_PER_REFRESH = 28
+        private const val TARGET_VERIFIED_FREE = 12
     }
 }
