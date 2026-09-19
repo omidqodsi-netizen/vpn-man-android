@@ -9,6 +9,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
+import go.Seq
 import ir.omid.vpnman.MainActivity
 import ir.omid.vpnman.R
 import ir.omid.vpnman.model.ConnectionState
@@ -24,7 +25,8 @@ class MyVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        XrayRuntime.initialize(applicationContext)
+        Seq.setContext(applicationContext)
+        Libv2ray.initCoreEnv(filesDir.absolutePath, "")
         coreController = Libv2ray.newCoreController(object : CoreCallbackHandler {
             override fun startup(): Long = 0L
             override fun shutdown(): Long = 0L
@@ -59,29 +61,20 @@ class MyVpnService : VpnService() {
             val xrayConfig = XrayConfigFactory.build(rawConfig)
             val builder = Builder()
                 .setSession("وی پی ان من")
-                .setMtu(TUN_MTU)
+                .setMtu(1500)
                 .addAddress("10.88.0.2", 30)
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
 
-            // Android's VpnService file descriptor is non-blocking by default.
-            // AndroidLibXrayLite worked correctly in the known-good v1.1.0 build
-            // with a blocking TUN fd; without this the core can report running
-            // while user traffic never actually crosses the tunnel.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                builder.setBlocking(true)
-            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setBlocking(true)
 
-            // Route IPv6 through the VPN as well. Leaving IPv6 outside the VPN can
-            // make apps/sites appear filtered even when IPv4 is tunneled correctly.
             runCatching {
                 builder.addAddress("fd42:4242:4242::2", 64)
                 builder.addRoute("::", 0)
                 builder.addDnsServer("2606:4700:4700::1111")
             }
 
-            // Keep Xray's own upstream sockets out of the TUN to avoid a route loop.
             runCatching { builder.addDisallowedApplication(packageName) }
 
             vpnInterface = builder.establish() ?: error("اندروید اجازه ساخت رابط VPN را نداد")
@@ -89,16 +82,11 @@ class MyVpnService : VpnService() {
             if (coreController?.isRunning != true) error("هسته Xray شروع نشد")
 
             VpnStateStore.update(ConnectionState.CONNECTED, name)
-            getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, buildNotification("متصل به $name"))
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.notify(NOTIFICATION_ID, buildNotification("متصل به $name"))
         } catch (t: Throwable) {
             stopCoreOnly()
-            VpnStateStore.update(
-                ConnectionState.ERROR,
-                name,
-                t.message?.replace(Regex("\\s+"), " ")?.trim()
-                    ?: "خطای ناشناخته در اتصال"
-            )
+            VpnStateStore.update(ConnectionState.ERROR, name, t.message ?: "خطای ناشناخته در اتصال")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -133,11 +121,7 @@ class MyVpnService : VpnService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "اتصال VPN",
-                NotificationManager.IMPORTANCE_LOW
-            )
+            val channel = NotificationChannel(CHANNEL_ID, "اتصال VPN", NotificationManager.IMPORTANCE_LOW)
             channel.description = "وضعیت اتصال وی پی ان من"
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
@@ -170,6 +154,5 @@ class MyVpnService : VpnService() {
         const val EXTRA_NAME = "name"
         private const val CHANNEL_ID = "vpn_connection"
         private const val NOTIFICATION_ID = 901
-        private const val TUN_MTU = 1500
     }
 }

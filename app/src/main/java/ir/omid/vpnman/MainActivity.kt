@@ -16,7 +16,6 @@ import ir.omid.vpnman.ui.HomeScreen
 import ir.omid.vpnman.ui.MainViewModel
 import ir.omid.vpnman.ui.theme.VpnManTheme
 import ir.omid.vpnman.vpn.MyVpnService
-import ir.omid.vpnman.vpn.XrayRuntime
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<MainViewModel>()
@@ -31,7 +30,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        XrayRuntime.initialize(applicationContext)
         setContent {
             VpnManTheme {
                 HomeScreen(

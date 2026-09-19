@@ -686,10 +686,10 @@ private fun ServerList(
                                     append(protocolLabel(server.protocol))
                                     if (server.autoManaged) {
                                         when (freeCheck?.state) {
-                                            FreeCheckState.VERIFIED -> append(" • تست واقعی ✓")
-                                            FreeCheckState.TESTING -> append(" • در حال تست…")
+                                            FreeCheckState.VERIFIED -> append(" • تأیید قبلی ✓")
+                                            FreeCheckState.TESTING -> append(" • در حال بررسی…")
                                             FreeCheckState.FAILED -> append(" • تست ناموفق")
-                                            FreeCheckState.PENDING, null -> append(" • در انتظار تست")
+                                            FreeCheckState.PENDING, null -> append(" • آماده اتصال")
                                         }
                                     }
                                     if (server.healthScore > 0) append(" • امتیاز ${server.healthScore.fa()}")
